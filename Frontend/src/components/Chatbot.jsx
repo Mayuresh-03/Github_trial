@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react'; // Added useMemo
 import { MessageCircle, Send, X, Bot } from 'lucide-react';
 import { API_BASE_URL } from '../api/apiConfig';
 
@@ -8,12 +8,17 @@ const Chatbot = () => {
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
+    // 1. Generate a unique session_id that persists for this "visit"
+    // useMemo ensures this ID doesn't change during re-renders
+    const sessionId = useMemo(() => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, []);
+
     const handleSend = async (e) => {
         e.preventDefault();
         if (!input.trim()) return;
 
         const userMsg = { text: input, isBot: false };
         setMessages(prev => [...prev, userMsg]);
+        const currentInput = input; // Capture input for the API call
         setInput("");
         setIsLoading(true);
 
@@ -21,11 +26,21 @@ const Chatbot = () => {
             const response = await fetch(`${API_BASE_URL}/api/chat/query`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: input }),
+                // 2. Updated body to include the required session_id
+                body: JSON.stringify({ 
+                    message: currentInput,
+                    session_id: sessionId 
+                }),
             });
+
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}`);
+            }
+
             const data = await response.json();
             setMessages(prev => [...prev, { text: data.answer, isBot: true }]);
         } catch (error) {
+            console.error("Chatbot Error:", error);
             setMessages(prev => [...prev, { text: "Error connecting to server.", isBot: true }]);
         } finally {
             setIsLoading(false);
@@ -52,29 +67,44 @@ const Chatbot = () => {
                         <button onClick={() => setIsOpen(false)}><X size={20} /></button>
                     </div>
 
-                    {/* Messages */}
+                    {/* Messages Area */}
                     <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50">
                         {messages.map((msg, i) => (
                             <div key={i} className={`flex ${msg.isBot ? 'justify-start' : 'justify-end'}`}>
                                 <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${
-                                    msg.isBot ? 'bg-white border border-gray-200' : 'bg-blue-600 text-white'
+                                    msg.isBot ? 'bg-white border border-gray-200 shadow-sm' : 'bg-blue-600 text-white'
                                 }`}>
                                     {msg.text}
                                 </div>
                             </div>
                         ))}
-                        {isLoading && <div className="text-xs text-gray-500 italic">Bot is thinking...</div>}
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-white border border-gray-200 p-3 rounded-2xl">
+                                    <div className="flex gap-1">
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Input */}
-                    <form onSubmit={handleSend} className="p-4 border-t border-gray-200 flex gap-2">
+                    {/* Input Form */}
+                    <form onSubmit={handleSend} className="p-4 border-t border-gray-200 flex gap-2 bg-white">
                         <input 
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder="Ask me anything..."
-                            className="flex-1 text-sm outline-none"
+                            disabled={isLoading}
+                            className="flex-1 text-sm outline-none disabled:bg-gray-50"
                         />
-                        <button type="submit" className="text-blue-600 hover:text-blue-800">
+                        <button 
+                            type="submit" 
+                            disabled={isLoading || !input.trim()}
+                            className="text-blue-600 hover:text-blue-800 disabled:text-gray-300"
+                        >
                             <Send size={20} />
                         </button>
                     </form>
